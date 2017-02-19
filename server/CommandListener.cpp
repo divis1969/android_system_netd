@@ -48,7 +48,7 @@
 #include "FirewallController.h"
 #include "RouteController.h"
 #include "UidRanges.h"
-
+#include "QtiConnectivityAdapter.h"
 #include "QtiDataController.h"
 
 #ifdef QSAP_WLAN
@@ -206,6 +206,7 @@ CommandListener::CommandListener() :
     registerLockingCmd(new ClatdCmd());
     registerLockingCmd(new NetworkCommand());
     registerLockingCmd(new StrictCmd());
+    registerLockingCmd(getQtiConnectivityCmd(this));
 
     initializeDataControllerLib();
 
@@ -683,11 +684,13 @@ int CommandListener::NatCmd::runCommand(SocketClient *cli,
     if (!strcmp(argv[1], "enable") && argc >= 4) {
         rc = gCtls->natCtrl.enableNat(argv[2], argv[3]);
         if(!rc) {
+            natStarted(argv[2], argv[3]);
             /* Ignore ifaces for now. */
             rc = gCtls->bandwidthCtrl.setGlobalAlertInForwardChain();
         }
     } else if (!strcmp(argv[1], "disable") && argc >= 4) {
         /* Ignore ifaces for now. */
+        natStopped(argv[2], argv[3]);
         rc = gCtls->bandwidthCtrl.removeGlobalAlertInForwardChain();
         rc |= gCtls->natCtrl.disableNat(argv[2], argv[3]);
     } else {
@@ -787,7 +790,11 @@ int CommandListener::SoftapCmd::runCommand(SocketClient *cli,
     else if (!strcmp(argv[1], "startap")) {
         rc = qsap_prepare_softap();
         if (!rc) {
-            rc = gCtls->softapCtrl.startSoftap(qsap_is_fst_enabled(), cli);
+#ifdef LIBWPA_CLIENT_EXISTS
+            rc = gCtls->softapCtrl.startSoftap(qsap_is_fst_enabled(), cli, argv[2]);
+#else
+            rc = gCtls->softapCtrl.startSoftap(qsap_is_fst_enabled(), NULL, argv[2]);
+#endif
             if (rc != ResponseCode::SoftapStatusResult) {
                 ALOGE("failed to start SoftAP ResponseCode : %d", rc);
                 qsap_unprepare_softap();
@@ -801,7 +808,11 @@ int CommandListener::SoftapCmd::runCommand(SocketClient *cli,
         qsap_unprepare_softap();
 #else
     if (!strcmp(argv[1], "startap")) {
-        rc = gCtls->softapCtrl.startSoftap(false, cli);
+#ifdef LIBWPA_CLIENT_EXISTS
+        rc = gCtls->softapCtrl.startSoftap(false, cli, argv[2]);
+#else
+        rc = gCtls->softapCtrl.startSoftap(false, NULL, argv[2]);
+#endif
     } else if (!strcmp(argv[1], "stopap")) {
         rc = gCtls->softapCtrl.stopSoftap();
 #endif
@@ -1270,38 +1281,38 @@ int CommandListener::BandwidthControlCmd::runCommand(SocketClient *cli, int argc
     }
 
     if (!strcmp(argv[1], "addrestrictappsondata")) {
-        if (argc < 3) {
-            sendGenericSyntaxError(cli, "addrestrictappsondata <appUid> ...");
+        if (argc < 4) {
+            sendGenericSyntaxError(cli, "addrestrictappsondata <interface> <appUid> ...");
             return 0;
         }
-        int rc = gCtls->bandwidthCtrl.addRestrictAppsOnData(argc - 2, argv + 2);
+        int rc = gCtls->bandwidthCtrl.addRestrictAppsOnData(argv[2], argc - 3, argv + 3);
         sendGenericOkFail(cli, rc);
         return 0;
     }
     if (!strcmp(argv[1], "removerestrictappsondata")) {
-        if (argc < 3) {
-            sendGenericSyntaxError(cli, "removerestrictappsondata <appUid> ...");
+        if (argc < 4) {
+            sendGenericSyntaxError(cli, "removerestrictappsondata <interface> <appUid> ...");
             return 0;
         }
-        int rc = gCtls->bandwidthCtrl.removeRestrictAppsOnData(argc - 2, argv + 2);
+        int rc = gCtls->bandwidthCtrl.removeRestrictAppsOnData(argv[2], argc - 3, argv + 3);
         sendGenericOkFail(cli, rc);
         return 0;
     }
     if (!strcmp(argv[1], "addrestrictappsonwlan")) {
-        if (argc < 3) {
-            sendGenericSyntaxError(cli, "addrestrictappsonwlan <appUid> ...");
+        if (argc < 4) {
+            sendGenericSyntaxError(cli, "addrestrictappsonwlan <interface> <appUid> ...");
             return 0;
         }
-        int rc = gCtls->bandwidthCtrl.addRestrictAppsOnWlan(argc - 2, argv + 2);
+        int rc = gCtls->bandwidthCtrl.addRestrictAppsOnWlan(argv[2], argc - 3, argv + 3);
         sendGenericOkFail(cli, rc);
         return 0;
     }
     if (!strcmp(argv[1], "removerestrictappsonwlan")) {
-        if (argc < 3) {
-            sendGenericSyntaxError(cli, "removerestrictappsonwlan <appUid> ...");
+        if (argc < 4) {
+            sendGenericSyntaxError(cli, "removerestrictappsonwlan <inteface> <appUid> ...");
             return 0;
         }
-        int rc = gCtls->bandwidthCtrl.removeRestrictAppsOnWlan(argc - 2, argv + 2);
+        int rc = gCtls->bandwidthCtrl.removeRestrictAppsOnWlan(argv[2], argc - 3, argv + 3);
         sendGenericOkFail(cli, rc);
         return 0;
     }
